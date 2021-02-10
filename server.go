@@ -2,24 +2,25 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"github.com/gorilla/mux"
 	"github.com/jozo/go-rest-servers/store"
 	"log"
 	"mime"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
 func main() {
-	mux := http.NewServeMux()
+	router := mux.NewRouter()
+	router.StrictSlash(true)
 	server := NewTaskServer()
-	mux.HandleFunc("/task/", server.taskHandler)
-	//mux.HandleFunc("/tag/", server.tagHandler)
-	//mux.HandleFunc("/due/", server.dueHandler)
 
-	log.Fatal(http.ListenAndServe("localhost:8080", mux))
+	router.HandleFunc("/task/", server.createTaskHandler).Methods("POST")
+	router.HandleFunc("/task/", server.getAllTasksHandler).Methods("GET")
+	router.HandleFunc("/task/{id:[0-9]+}/", server.getTaskHandler).Methods("GET")
+
+	log.Fatal(http.ListenAndServe("localhost:8080", router))
 }
 
 type taskServer struct {
@@ -29,50 +30,6 @@ type taskServer struct {
 func NewTaskServer() *taskServer {
 	store := store.New()
 	return &taskServer{store: store}
-}
-
-func (ts *taskServer) taskHandler(w http.ResponseWriter, req *http.Request) {
-	if req.URL.Path == "/task/" {
-		if req.Method == http.MethodPost {
-			ts.createTaskHandler(w, req)
-		} else if req.Method == http.MethodGet {
-			ts.getAllTasksHandler(w, req)
-		} else if req.Method == http.MethodDelete {
-			//ts.deleteAllTasksHandler(w, req)
-		} else {
-			http.Error(
-				w,
-				fmt.Sprintf("expect method GET, DELETE or POST at /task/, got %v", req.Method),
-				http.StatusMethodNotAllowed,
-			)
-			return
-		}
-	} else {
-		// Request has an ID, as in "/task/<id>"
-		path := strings.Trim(req.URL.Path, "/")
-		pathParts := strings.Split(path, "/")
-		if len(pathParts) < 2 {
-			http.Error(w, "expect /task/<id> in task handler", http.StatusBadRequest)
-			return
-		}
-		id, err := strconv.Atoi(pathParts[1])
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		if req.Method == http.MethodDelete {
-			//ts.deleteTaskHandler(w, req, id)
-		} else if req.Method == http.MethodGet {
-			ts.getTaskHandler(w, req, id)
-		} else {
-			http.Error(w,
-				fmt.Sprintf("expect method GET or DELETE at /task/<id>, got %v", req.Method),
-				http.StatusMethodNotAllowed,
-			)
-			return
-		}
-	}
 }
 
 func (ts *taskServer) getAllTasksHandler(w http.ResponseWriter, req *http.Request) {
@@ -117,9 +74,10 @@ func (ts *taskServer) createTaskHandler(w http.ResponseWriter, req *http.Request
 	renderJSON(w, ResponseId{Id: id})
 }
 
-func (ts *taskServer) getTaskHandler(w http.ResponseWriter, req *http.Request, id int) {
+func (ts *taskServer) getTaskHandler(w http.ResponseWriter, req *http.Request) {
 	log.Printf("handling get task at %s\n", req.URL.Path)
 
+	id, _ := strconv.Atoi(mux.Vars(req)["id"])
 	task, err := ts.store.GetTask(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
